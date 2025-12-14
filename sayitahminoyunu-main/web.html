@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Number Game</title>
+
+    <!-- Buraya CSS kodların gelecek -->
+    <link rel="stylesheet" href="image.css">
+</head>
+
+<body>
+    <div class="login-screen">
+        <div class="login-card">
+            <h1>Number Game</h1>
+            <p>Kullanıcı adını gir ve oyuna başla</p>
+
+            <input type="text" id="username" placeholder="Kullanıcı adınız">
+            <button id="start-btn">Başla</button>
+        </div>
+    </div>
+
+
+    <div class="container" style="display:none;">
+        <div class="text1">What is the number !?</div>
+        <div class="text2">Sayiyi doğru tahmin et</div>
+        <div class="text3">Tahmin ettiğiniz sayı 3 basamaklıdır.</div>
+        <div class="text4"></div>
+        <div class="history"></div>
+
+        <div class="text5">678</div>
+
+
+    </div>
+
+    <div class="container2" style="display:none;">
+        <div class="container2-1">
+            <div class="text6">Oyuncu</div>
+            <div class="text7">Skoru</div>
+        </div>
+        <div id="players-list"></div>
+    </div>
+
+
+    <div class="container3" style="display:none;">
+        <button class="button2" data-key="1">1</button>
+        <button class="button2" data-key="2">2</button>
+        <button class="button2" data-key="3">3</button>
+        <button class="button2" data-key="4">4</button>
+        <button class="button2" data-key="5">5</button>
+        <button class="button2" data-key="6">6</button>
+        <button class="button2" data-key="7">7</button>
+        <button class="button2" data-key="8">8</button>
+        <button class="button2" data-key="9">9</button>
+        <button class="button2" data-key="0">0</button>
+        <button class="button2 enter">Enter</button>
+        <button class="button2 delete">Del</button>
+
+    </div>
+    <div class="gameover-screen" style="display:none;">
+        <p>Oyun bitti!</p>
+        <p id="target-number"></p>
+        <p id="winner-name"></p>
+        <button id="restart-btn">Yeniden Oyna</button>
+        <button id="exit-btn">Çık</button>
+    </div>
+
+    <div id="overlay" class="overlay"></div>
+
+    <script>
+        let socket = new WebSocket("ws://localhost:8765");
+        let currentGuess = "";
+
+        socket.onopen = () => {
+            console.log("✅ WebSocket bağlandı");
+        };
+
+        socket.onmessage = (event) => {
+            console.log("📩 Sunucudan mesaj:", event.data);
+
+            const msg = event.data.trim().split("|");
+
+            // --- WAIT ---
+            if (msg[0] === "WAIT") {
+                document.querySelector(".text3").textContent =
+                    "Diğer oyuncu bekleniyor...";
+            }
+
+            // --- START|digit ---
+            if (msg[0] === "START") {
+                const digits = msg[1];
+                document.querySelector(".text3").textContent =
+                    `Tahmin ettiğiniz sayı ${digits} basamaklıdır.`;
+            }
+
+            // --- RESULT|guess|plus|minus|score|total ---
+            if (msg[0] === "RESULT") {
+                const guess = msg[1];
+                const plus = msg[2];
+                const minus = msg[3];
+                const score = msg[4];
+                const total = msg[5];
+
+                document.querySelector(".text4").textContent =
+                    `Tahmininiz | +=${plus}, -=${minus} | skor=${score} toplam=${total}`;
+                document.querySelector(".text5").textContent = guess;
+
+                const line = document.createElement("div");
+                line.textContent = `${guess} → +${plus}, -${minus} | skor=${score}`;
+                document.querySelector(".history").appendChild(line);
+            }
+
+            // --- GAMEOVER|target|p1|p2 ---
+            if (msg[0] === "GAMEOVER") {
+                const target = msg[1];
+                const winner_name = msg[2];
+
+                // Ekrana yaz
+                document.getElementById("target-number").textContent = 
+                    `Hedef sayı: ${target}`;
+                
+                document.getElementById("winner-name").textContent = 
+                    `Kazanan: ${winner_name}`;
+
+                document.querySelector(".gameover-screen").style.display = "block";
+
+                document.getElementById("overlay").classList.add("active");
+            }
+            if (msg[0] === "SCORES") {
+
+                // 1. önce listeyi temizle
+                players = [];
+                const playersContainer = document.getElementById("players-list");
+                playersContainer.innerHTML = "";
+
+                // 2. tüm oyuncuları sırayla ekle
+                for (let i = 1; i < msg.length; i++) {
+                    const [name, score] = msg[i].split(":");
+
+                    // yeni satır elementi oluştur
+                    const row = document.createElement("div");
+                    row.className = "player-row";
+                    row.innerHTML = `
+                    <div class="player-index">${i}.</div>
+                    <div class="player-name">${name}</div>
+                    <div class="player-score">${score}</div>
+                    `;
+
+                    playersContainer.appendChild(row);
+                }
+            }
+
+        };
+
+        // --- Butonlar ---
+        document.querySelectorAll(".button2").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const key = btn.dataset.key;
+
+                if (key) {
+                    currentGuess += key;
+                    document.querySelector(".text5").textContent = currentGuess;
+                }
+
+                if (btn.classList.contains("enter")) {
+                    if (currentGuess.length > 0) {
+                        socket.send(currentGuess);
+                        console.log("➡️ Gönderildi:", currentGuess);
+                    }
+                    currentGuess = "";
+                }
+            });
+        });
+        document.querySelector(".delete").addEventListener("click", () => {
+            currentGuess = currentGuess.slice(0, -1);
+            document.querySelector(".text5").textContent = currentGuess;
+        });
+
+        let username = "";
+
+        document.getElementById("start-btn").addEventListener("click", () => {
+            username = document.getElementById("username").value.trim();
+            if (username.length > 0) {
+                socket.send(`JOIN|${username}`);
+                document.querySelector(".login-screen").style.display = "none";
+                document.querySelector(".container").style.display = "block";
+                document.querySelector(".container2").style.display = "block";
+                document.querySelector(".container3").style.display = "block";
+            }
+        });
+
+        // --------
+        // RESTART
+        // -------- 
+        document.getElementById("restart-btn").addEventListener("click", () => {
+            socket.send("RESTART");
+            document.querySelector(".gameover-screen").style.display = "none";
+            document.getElementById("overlay").classList.remove("active");
+        });
+
+        document.getElementById("exit-btn").addEventListener("click", () => {
+            socket.close();
+            location.reload();
+        });
+
+
+    </script>
+    
+
+</body>
+
+</html>
